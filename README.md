@@ -38,7 +38,7 @@ By default, the tools search "doco.conf" on the same directry.
 ### CLI tool
 
     Search API:
-    doco.py (IP address|hostname|file)
+    doco.py (IP address|hostname|text file contains IP or hostname)
     
     Access count API:
     doco.py -a (day|month)
@@ -50,7 +50,7 @@ By default, the tools search "doco.conf" on the same directry.
     
     options for Search API:
     -j                - Whois like summary in Japanese (default output)
-    -e                - Whois like summary English
+    -e                - Whois like summary in English
     -o (json|xml|csv) - Output format
  
 ### Flask API
