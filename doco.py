@@ -10,6 +10,7 @@ import logging
 from email.utils import parsedate_tz, mktime_tz
 import datetime
 
+jsic = "./000420038.csv"
 conf = "./doco.conf"
 confform = """
 Default config path: ./doco.conf
@@ -48,6 +49,13 @@ fieldnames = [
                     "OrgDomainType",
                     "DomainName",
                     "DomainType",
+                    "BCFlag",
+                    "OrgIndependentCode",
+                    "ProxyFlag",
+                    "OrgIndustrialCategoryL",
+                    "OrgIndustrialCategoryM",
+                    "OrgIndustrialCategoryS",
+                    "OrgIndustrialCategoryT",
         ]
 
 
@@ -95,7 +103,7 @@ class Doco:
                     self,
                     filename='doco_cache',
                     backend='sqlite',
-                    expire=2592000,
+                    expire=86400,
                     config=None
                 ):
 
@@ -213,6 +221,7 @@ class Doco:
             self.writer = writer
             self.writer.writeheader()
 
+        # todo: error handling
         if not j:
             j = self.result.json()
             if "date" in self.result.headers:
@@ -277,12 +286,69 @@ class Doco:
                     "OrgDomainType",
                     "DomainName",
                     "DomainType",
+                    "OrgIndustrialCategoryL",
+                    "OrgIndustrialCategoryM",
+                    "OrgIndustrialCategoryS",
+                    "OrgIndustrialCategoryT",
                 ]
 
         summary = ""
         for k in summary_key:
-            summary += "{0:<20} : {1}\n".format(k, json[k])
+            # industrial category transform
+            if k in (
+                    "OrgIndustrialCategoryL",
+                    "OrgIndustrialCategoryM",
+                    "OrgIndustrialCategoryS",
+                    "OrgIndustrialCategoryT",
+                    ):
+                codes = json[k].split(",")
+                cnames = []
+                for c in codes:
+                    #logging.debug(c)
+                    cname = self.icat_lookup(k, c)
+                    if cname not in cnames:
+                        cnames.append(cname)
+                summary += "{0:<25} : {1}\n".format(k, cnames)
+            else:
+                summary += "{0:<25} : {1}\n".format(k, json[k])
         return summary
+
+    def icat_lookup(self, category, code):
+        l = None
+        m = None
+        s = None
+        t = None
+        if category == "OrgIndustrialCategoryL":
+            l = code
+        elif category == "OrgIndustrialCategoryM":
+            m = code
+        elif category == "OrgIndustrialCategoryS":
+            s = code
+        elif category == "OrgIndustrialCategoryT":
+            t = code
+        cname = None
+        if not os.path.exists(jsic):
+            logging.warning("JSIC csv not found.")
+        elif os.path.exists(jsic):
+            with open(jsic, encoding='shift_jis') as fh:
+                reader = csv.reader(fh)
+                for row in reader:
+                    if row[3] == t:
+                        cname = row[4]
+                    elif row[3] == "0000" \
+                     and row[2] == s:
+                        cname = row[4]
+                    elif row[3] == "0000" \
+                     and row[2] == "000" \
+                     and row[1] == m:
+                        cname = row[4]
+                    elif row[3] == "0000" \
+                     and row[2] == "000" \
+                     and row[1] == "00" \
+                     and row[0] == l:
+                        cname = row[4]
+        #logging.debug(cname)
+        return cname
 
     def parse_config(self, config):
         cp = configparser.ConfigParser()
@@ -317,9 +383,9 @@ class Doco:
         return
 
 def bulk_req(d, arg_is, target):
-    lines = None
-
-    # todo: move to validate arg
+    lines = target
+    """
+    # todo: move to validate_arg
     if arg_is == "file":
         fh = open(target, 'r')
         lines = fh.readlines()
@@ -328,6 +394,7 @@ def bulk_req(d, arg_is, target):
         fh = target.getvalue()
         lines = fh.splitlines(keepends=False)
         target.close()
+    """
     logging.debug(lines)
 
     if d.output == "csv" and d.csvfile == None:
@@ -361,7 +428,9 @@ def bulk_req(d, arg_is, target):
                 print(d.summary())
             elif d.output == 'csv':
                 d.mkcsv(bulk=True)
-            elif d.output in ('json', 'xml'):
+            elif d.output == 'json':
+                print(d.result.json())
+            elif d.output == 'xml':
                 print(d.result.text)
             d.clear()
         elif line_is == 'hostname':
@@ -393,15 +462,21 @@ def bulk_req(d, arg_is, target):
 
 def validate_arg(arg, bulk=False):
     arg_is = None
+    validated = []
     if os.path.exists(arg):
         if not bulk:
             arg_is = "file"
+            fh = open(arg, 'r')
+            validated = fh.readlines()
+            fh.close()
         else:
             logging.info("skipped.")
     elif re.match("(\d{1,3}\.){3}\d{1,3}", arg):
         arg_is = "ip"
+        validated.append(arg)
     elif re.match("[0-9a-fA-F:]+:[0-9a-fA-F]{1,4}$", arg):
         arg_is = "ipv6"
+        validated.append(arg)
     else:
         try:
             addr = socket.getaddrinfo(arg, None)
@@ -410,19 +485,22 @@ def validate_arg(arg, bulk=False):
                 ip = a[4][0]
                 if ip not in ips:
                     ips.append(ip)
-            sio = StringIO()
-            for i in ips:
-                sio.write(i+"\n")
+            #sio = StringIO()
+            #for i in ips:
+            #    sio.write(i+"\n")
             if not bulk:
-                print(arg + " has ip:\n" + sio.getvalue())
+                #print(arg + " has ip:\n" + sio.getvalue())
+                print(arg + " has ip -> " + ",".join(ips))
             arg_is = "hostname"
-            arg = sio
+            #arg = sio
+            validated = ips
         except Exception as e:
             logging.info(e)
             logging.info("Invalid arg -> " + arg)
             arg_is = "invalid"
     # todo: return IP list
-    return arg_is, arg
+    #return arg_is, arg
+    return arg_is, validated
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -490,7 +568,7 @@ def main():
     else:
         sys.exit(args.help + "No argument.")
 
-    arg_is, target = validate_arg(arg)
+    arg_is, validated = validate_arg(arg)
     logging.debug(arg + " is " + arg_is)
 
     if args.output:
@@ -502,6 +580,7 @@ def main():
 
     if arg_is == "ip":
         # search API request
+        target = validated[0]
         if d.search(target, resform=d.resform):
             logging.debug("status -> " + str(d.result.status_code))
         else:
@@ -530,7 +609,8 @@ def main():
             # if input is file, force csv output
             d.output = "csv"
 
-        bulk_req(d, arg_is, target)
+        #bulk_req(d, arg_is, target)
+        bulk_req(d, arg_is, validated)
         if d.output == "csv":
             if d.csvfile:
                 d.csvfile.close()
