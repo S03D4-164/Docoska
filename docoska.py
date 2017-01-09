@@ -1,15 +1,18 @@
 #!/use/bin/env python
 
-import os, logging
+import os, sys, logging
 from doco import Doco
 
 from flask import Flask, request, jsonify, make_response
 app = Flask(__name__)
 
-config = "doco.conf"
+config = "./doco.conf"
+if not os.path.exists(config):
+    sys.exit("Config file not found.")
 
-@app.route('/count/', methods=['GET'])
-def count():
+# access=monthly(default)|daily
+@app.route('/count/<access>', methods=['GET'])
+def count(access):
     d = Doco(api="count")
     d.setloglevel(level="DEBUG")
     if os.path.exists(config):
@@ -19,8 +22,6 @@ def count():
         return make_response("Internal Server Error",500)
 
     if request.method == 'GET':
-        #  access=monthly(default)|daily
-        access = request.args.get("access")
         if access in ("daily", "monthly"):
             if access == "daily":
                 access = "DailyAccess"
@@ -38,9 +39,8 @@ def count():
 
     return make_response("Bad Request",400)
 
-# todo: more REST like route
-@app.route('/search/', methods=['GET'])
-def search():
+@app.route('/search/<ip>', methods=['GET'])
+def search(ip):
     res = None
     rdict = {
             "status":"",
@@ -59,7 +59,6 @@ def search():
         d.setcache()
 
     if request.method == 'GET':
-        ip = request.args.get("ip")
         # todo: validate ip
         if not ip:
             rdict["status"] = 400

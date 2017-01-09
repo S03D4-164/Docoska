@@ -10,7 +10,6 @@ import logging
 from email.utils import parsedate_tz, mktime_tz
 import datetime
 
-jsic = "./000420038.csv"
 conf = "./doco.conf"
 confform = """
 Default config path: ./doco.conf
@@ -91,6 +90,8 @@ class Doco:
         self.input = None
         self.csvfile = None
         self.writer = None
+
+        self.jsic = None
 
     def clear(self, input=False):
         self.ip = None
@@ -327,10 +328,11 @@ class Doco:
         elif category == "OrgIndustrialCategoryT":
             t = code
         cname = None
-        if not os.path.exists(jsic):
+        #logging.debug("JSIC csv -> " + self.jsic)
+        if not os.path.exists(self.jsic):
             logging.warning("JSIC csv not found.")
-        elif os.path.exists(jsic):
-            with open(jsic, encoding='shift_jis') as fh:
+        elif os.path.exists(self.jsic):
+            with open(self.jsic, encoding='shift_jis') as fh:
                 reader = csv.reader(fh)
                 for row in reader:
                     if row[3] == t:
@@ -370,6 +372,11 @@ class Doco:
                 self.search_api = apis['search']
             if 'count' in apis:
                 self.count_api = apis['count']
+                
+        if 'lookup' in cp:
+            lookup = cp['lookup']
+            if 'jsic' in lookup:
+                self.jsic = lookup['jsic']
 
         return cp
 
@@ -384,17 +391,6 @@ class Doco:
 
 def bulk_req(d, arg_is, target):
     lines = target
-    """
-    # todo: move to validate_arg
-    if arg_is == "file":
-        fh = open(target, 'r')
-        lines = fh.readlines()
-        fh.close()
-    elif arg_is == "hostname":
-        fh = target.getvalue()
-        lines = fh.splitlines(keepends=False)
-        target.close()
-    """
     logging.debug(lines)
 
     if d.output == "csv" and d.csvfile == None:
@@ -485,21 +481,15 @@ def validate_arg(arg, bulk=False):
                 ip = a[4][0]
                 if ip not in ips:
                     ips.append(ip)
-            #sio = StringIO()
-            #for i in ips:
-            #    sio.write(i+"\n")
             if not bulk:
-                #print(arg + " has ip:\n" + sio.getvalue())
                 print(arg + " has ip -> " + ",".join(ips))
             arg_is = "hostname"
-            #arg = sio
             validated = ips
         except Exception as e:
             logging.info(e)
             logging.info("Invalid arg -> " + arg)
             arg_is = "invalid"
-    # todo: return IP list
-    #return arg_is, arg
+
     return arg_is, validated
 
 def parse_args():
