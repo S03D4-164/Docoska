@@ -5,10 +5,11 @@ from io import StringIO
 import socket
 import argparse, configparser
 import requests, requests_cache
-import json, csv
+import json, csv, sqlite3
 import logging
 from email.utils import parsedate_tz, mktime_tz
 import datetime
+import defusedxml.ElementTree as ET
 
 conf = "./doco.conf"
 confform = """
@@ -80,6 +81,7 @@ class Doco:
         if api in ("search", "count"):
             self.api = api
 
+        # target ip address
         self.ip = None
 
         self.resform = None
@@ -92,6 +94,7 @@ class Doco:
         self.writer = None
 
         self.jsic = None
+        self.docodata = None
 
     def clear(self, input=False):
         self.ip = None
@@ -238,16 +241,19 @@ class Doco:
     def summary(self):
         json = self.result.json()
         status = self.result.status_code
+        logging.debug(status)
         logging.debug(self.output)
         summary_key = []
-        if not status == 200:
+        if "status" in json:
+            if not json["status"] == 200:
                 json["IP"] = self.ip
+                #logging.debug(json)
                 summary_key = [
                     "IP",
                     "message",
                     "status",
                 ]
-        elif status == 200:
+        else:
             if self.output == "summary":
                 summary_key = [
                     "IP",
@@ -291,6 +297,10 @@ class Doco:
                     "OrgIndustrialCategoryM",
                     "OrgIndustrialCategoryS",
                     "OrgIndustrialCategoryT",
+                    "OrgIpoType",
+                    "OrgCapitalCode",
+                    "OrgEmployeesCode",
+                    "OrgGrossCode",
                 ]
 
         summary = ""
@@ -306,13 +316,46 @@ class Doco:
                 cnames = []
                 for c in codes:
                     #logging.debug(c)
-                    cname = self.icat_lookup(k, c)
+                    #cname = self.icat_lookup(k, c)
+                    cname = self.docodata_lookup(k, c)
+
                     if cname not in cnames:
                         cnames.append(cname)
                 summary += "{0:<25} : {1}\n".format(k, cnames)
+            elif k in (
+                    "OrgIpoType",
+                    "OrgCapitalCode",
+                    "OrgEmployeesCode",
+                    "OrgGrossCode",
+                    ):
+                data = self.docodata_lookup(k, json[k])
+                summary += "{0:<25} : {1}\n".format(k, data)
             else:
                 summary += "{0:<25} : {1}\n".format(k, json[k])
         return summary
+
+    def docodata_lookup(self, key, code):
+        org = {
+            "OrgIpoType": "org4",
+            "OrgCapitalCode": "org5",
+            "OrgEmployeesCode": "org6",
+            "OrgGrossCode": "org7",
+            "OrgIndustrialCategoryL": "org8",
+            "OrgIndustrialCategoryM": "org9",
+            "OrgIndustrialCategoryS": "org10",
+            "OrgIndustrialCategoryT": "org11",
+        }
+        #self.docodata = "docodata.db"
+        conn = sqlite3.connect(self.docodata)
+        c = conn.cursor()
+        table = org[key]
+        sql = "select data from %s where code=\'%s\'" % (table, code)
+        data = c.execute(sql).fetchone()
+        c.close()
+        if data:
+            return data[0]
+
+        return
 
     def icat_lookup(self, category, code):
         l = None
@@ -377,6 +420,8 @@ class Doco:
             lookup = cp['lookup']
             if 'jsic' in lookup:
                 self.jsic = lookup['jsic']
+            if 'docodata' in lookup:
+                self.docodata = lookup['docodata']
 
         return cp
 
@@ -542,7 +587,13 @@ def main():
             access = "MonthlyAccess"
         if d.count(access=access):
             # todo: xml parse
-            sys.exit(d.result.text)
+            root = ET.fromstring(d.result.text)
+            for childs in root:
+                for child in childs:
+                    print(child.tag, child.attrib, child.text)
+                    for c in child:
+                        print(c.tag, c.attrib, c.text)
+            sys.exit()
         else:
             sys.exit("Count API Request Failed.")
 

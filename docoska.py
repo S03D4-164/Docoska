@@ -11,8 +11,8 @@ if not os.path.exists(config):
     sys.exit("Config file not found.")
 
 # access=monthly(default)|daily
-@app.route('/count/<access>', methods=['GET'])
-def count(access):
+@app.route('/count/', methods=['GET'])
+def count():
     d = Doco(api="count")
     d.setloglevel(level="DEBUG")
     if os.path.exists(config):
@@ -22,6 +22,7 @@ def count(access):
         return make_response("Internal Server Error",500)
 
     if request.method == 'GET':
+        access = request.args.get("access")
         if access in ("daily", "monthly"):
             if access == "daily":
                 access = "DailyAccess"
@@ -32,15 +33,15 @@ def count(access):
             d.count(access="MonthlyAccess")
         else:
             logging.error("Invalid access type")
-
+        out = request.args.get("out")
     # todo: output transform
     if d.result:
         return d.result.text
 
     return make_response("Bad Request",400)
 
-@app.route('/search/<ip>', methods=['GET'])
-def search(ip):
+@app.route('/search/', methods=['GET'])
+def search():
     res = None
     rdict = {
             "status":"",
@@ -59,6 +60,7 @@ def search(ip):
         d.setcache()
 
     if request.method == 'GET':
+        ip = request.args.get("ip")
         # todo: validate ip
         if not ip:
             rdict["status"] = 400
@@ -86,7 +88,8 @@ def search(ip):
             elif d.output == "xml":
                 res = d.result.text
             elif d.output in ("summary", "jsummary"):
-                res = d.summary()
+                res = make_response(d.summary())
+                res.headers["content-type"] = "text/plain"
 
     if not res:
         if not rdict["status"]:

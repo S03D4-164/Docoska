@@ -1,0 +1,16 @@
+[api]
+search=https://api.docodoco.jp/v5/search
+count=https://api.docodoco.jp/count
+
+[key]
+key1=
+key2=
+
+[cache]
+backend=sqlite
+filename=doco_cache
+expire=86400
+
+[lookup]
+#jsic=jsic.csv
+docodata=docodata.db
