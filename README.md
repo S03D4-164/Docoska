@@ -5,13 +5,16 @@ This repository contains following python tools.
 
     doco.py    : Whois like DocoDoco client (for API v5)
     docoska.py : Flask API using doco.py
+    doco2db.py : Create sqlite DB from DocoDoco's HTML source.
 
 ## Requirements
     Python 3.5.2
     Flask==0.12
     requests==2.12.4
     requests-cache==0.4.13
-
+    defusedxml==0.5.0
+    # for doco2db
+    beautifulsoup4==4.5.3
 And API keys (need to register)
 
 ## Quick Start
