@@ -6,6 +6,7 @@ import socket
 import argparse, configparser
 import requests, requests_cache
 import json, csv, sqlite3
+import codecs
 import logging
 from email.utils import parsedate_tz, mktime_tz
 import datetime
@@ -39,10 +40,10 @@ fieldnames = [
                     "OrgName",
                     #"OrgAddress",
                     #"OrgPresident",
-                    "CountryAName",
-                    "PrefAName",
-                    "CityAName",
-                    "OrgEnglishName",
+                    #"CountryAName",
+                    #"PrefAName",
+                    #"CityAName",
+                    #"OrgEnglishName",
                     #"OrgEnglishAddress",
                     "OrgUrl",
                     "OrgDomainName",
@@ -56,6 +57,10 @@ fieldnames = [
                     "OrgIndustrialCategoryM",
                     "OrgIndustrialCategoryS",
                     "OrgIndustrialCategoryT",
+                    "OrgIpoType",
+                    "OrgCapitalCode",
+                    "OrgEmployeesCode",
+                    "OrgGrossCode",
         ]
 
 
@@ -181,9 +186,13 @@ class Doco:
         return True
 
     def search(self, ip, resform="json"):
-        # todo: ip validation
         self.api = "search"
-        self.ip = ip
+        if re.match("(\d{1,3}\.){3}\d{1,3}", ip):
+            self.ip = ip
+        else:
+            logging.error("Invalid input.")
+            return False
+
         if resform in ("json", "xml"):
             self.resform = resform
         else:
@@ -233,6 +242,24 @@ class Doco:
                 timestamp = mktime_tz(parsedate_tz(date))
                 utctime = datetime.datetime.utcfromtimestamp(timestamp)
                 j["UTCDate"] = utctime
+            for k in (
+                    "OrgIndustrialCategoryL",
+                    "OrgIndustrialCategoryM",
+                    "OrgIndustrialCategoryS",
+                    "OrgIndustrialCategoryT",
+                    "OrgIpoType",
+                    "OrgCapitalCode",
+                    "OrgEmployeesCode",
+                    "OrgGrossCode",
+                    ):
+                if j[k]:
+                    codes = j[k].split(",")
+                    cnames = []
+                    for c in codes:
+                        cname = self.docodata_lookup(k, c)
+                        if cname not in cnames:
+                            cnames.append(cname)
+                    j[k] = "／".join(cnames)
         if self.input:
             j["Input"] = self.input
         self.writer.writerow(j)
@@ -311,6 +338,10 @@ class Doco:
                     "OrgIndustrialCategoryM",
                     "OrgIndustrialCategoryS",
                     "OrgIndustrialCategoryT",
+                    "OrgIpoType",
+                    "OrgCapitalCode",
+                    "OrgEmployeesCode",
+                    "OrgGrossCode",
                     ):
                 codes = json[k].split(",")
                 cnames = []
@@ -318,23 +349,18 @@ class Doco:
                     #logging.debug(c)
                     #cname = self.icat_lookup(k, c)
                     cname = self.docodata_lookup(k, c)
-
                     if cname not in cnames:
                         cnames.append(cname)
                 summary += "{0:<25} : {1}\n".format(k, cnames)
-            elif k in (
-                    "OrgIpoType",
-                    "OrgCapitalCode",
-                    "OrgEmployeesCode",
-                    "OrgGrossCode",
-                    ):
-                data = self.docodata_lookup(k, json[k])
-                summary += "{0:<25} : {1}\n".format(k, data)
             else:
                 summary += "{0:<25} : {1}\n".format(k, json[k])
         return summary
 
     def docodata_lookup(self, key, code):
+        if not re.match("^[0-9a-zA-Z]+$", code):
+            logging.debug("Invalid code.")
+            return
+        
         org = {
             "OrgIpoType": "org4",
             "OrgCapitalCode": "org5",
@@ -345,16 +371,19 @@ class Doco:
             "OrgIndustrialCategoryS": "org10",
             "OrgIndustrialCategoryT": "org11",
         }
-        #self.docodata = "docodata.db"
+
         conn = sqlite3.connect(self.docodata)
         c = conn.cursor()
         table = org[key]
         sql = "select data from %s where code=\'%s\'" % (table, code)
-        data = c.execute(sql).fetchone()
+        data = None
+        try:
+            data = c.execute(sql).fetchone()
+        except Exception as e:
+            logging.debug(str(e))
         c.close()
         if data:
             return data[0]
-
         return
 
     def icat_lookup(self, category, code):
@@ -441,7 +470,9 @@ def bulk_req(d, arg_is, target):
     if d.output == "csv" and d.csvfile == None:
         filename = d.input + "_doco.csv"
         print("output -> " + filename)
-        d.csvfile = open(filename, "w")
+        #d.csvfile = open(filename, "w")
+        d.csvfile = codecs.open(filename, "wb", "utf-8")
+        d.csvfile.write(u'\ufeff')
         writer = csv.DictWriter(
                     d.csvfile, 
                     fieldnames=fieldnames,
@@ -477,8 +508,6 @@ def bulk_req(d, arg_is, target):
         elif line_is == 'hostname':
             d.input = line
             bulk_req(d, line_is, validated_line)
-            # clean up object
-            d.clear(input=True)
         else:
             if line_is == 'ipv6':
                 if d.output in ("summary", "jsummary"):
@@ -493,11 +522,11 @@ def bulk_req(d, arg_is, target):
                     d.input = line
                 if line_is == 'ipv6':
                     d.ip = line
-                    result = {"Input":d.input,"IP":d.ip}
                 else:
-                    result = {"Input":d.input,"IP":"-"}
+                    d.ip = "-"
+                result = {"Input":d.input,"IP":d.ip}
                 d.mkcsv(bulk=True, j=result)
-                d.clear()
+        d.clear(input=True)
 
     return
 
